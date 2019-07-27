@@ -144,9 +144,13 @@ if __name__ == '__main__':
     # Train
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
-        sess.run(train_op, feed_dict={
+        _, training_pred = sess.run(train_op, feed_dict={
             input_data: source,
             output_data: target,
             input_sequence_length: from_length,
             output_sequence_length: to_length
         })
+
+        # print(' '.join([id2word[i] for i in source[0] if i != word2id["_EOS"]]))
+        # print(' '.join([id2word[i] for i in target[0] if i != word2id["_EOS"]]))
+        # print(' '.join([id2word[i] for i in training_pred[0] if i != word2id["_EOS"]]))
