@@ -34,7 +34,7 @@ def my_decoder(output_data, corpus_size, word2id, embedding_matrix, hidden_size,
     with tf.variable_scope("Decoder"):
         # Helper对象
         training_helper = tf.contrib.seq2seq.TrainingHelper(inputs=decoder_embedding_input,
-                                          sequence_length=output_data_length)
+                                                            sequence_length=output_sequence_length)
         # Basic Decoder
         training_decoder = tf.contrib.seq2seq.BasicDecoder(cell=decoder_cells,
                                         helper=training_helper,
@@ -94,12 +94,12 @@ if __name__ == '__main__':
             embedding_matrix[i] = tmp[k]
             k += 1
     # 统计id向量的长度，并统一长度
-    input_sequence_length = [len(i) for i in fromids]
-    max_input_sequence_length = max(input_sequence_length)
+    from_length = [len(i) for i in fromids]
+    max_input_sequence_length = max(from_length)
     source = [i + [word2id["_PAD"]]*(max_input_sequence_length-len(i)) for i in fromids]
 
-    output_sequence_length = [len(i) for i in toids]
-    max_output_sequence_length = max(output_sequence_length)
+    to_length = [len(i) for i in toids]
+    max_output_sequence_length = max(to_length)
     target = [i + [word2id['_PAD']]*(max_output_sequence_length-len(i)) for i in toids]
     # 定义Tensor
 
@@ -111,20 +111,17 @@ if __name__ == '__main__':
     ## 设置占位符
     input_data = tf.placeholder(dtype=tf.int32, shape=[corpus_size, None], name="source")  # 输入
     output_data = tf.placeholder(dtype=tf.int32, shape=[corpus_size, None], name="target")  # 输出
-    input_data_length = tf.placeholder(dtype=tf.int32, shape=[corpus_size], name="source_sequence_length")  # 输入句子的长度
-    output_data_length = tf.placeholder(dtype=tf.int32, shape=[corpus_size], name="target_sequence_length")  # 输出句子的长度
+    input_sequence_length = tf.placeholder(dtype=tf.int32, shape=[corpus_size], name="source_sequence_length")  # 输入句子的长度
+    output_sequence_length = tf.placeholder(dtype=tf.int32, shape=[corpus_size], name="target_sequence_length")  # 输出句子的长度
     emb_matrix = tf.constant(embedding_matrix, name="embedding_matrix", dtype=tf.float32)  # 词向量矩阵
 
     # Encoder
-    encoder_output, encoder_state = my_encoder(hidden_size, num_layers, embedding_matrix, input_data, input_data_length)
+    encoder_output, encoder_state = my_encoder(hidden_size, num_layers, embedding_matrix, input_data, input_sequence_length)
 
     # Decoder
     training_final_output, training_final_state, inference_final_output, inference_final_state = \
         my_decoder(output_data, corpus_size, word2id, embedding_matrix, hidden_size, num_layers,
                vocab_size, output_sequence_length, max_output_sequence_length, encoder_output)
-
-
-
 
     # Encoder-Decoder Model（Seq2Seq Model）
 
@@ -136,11 +133,20 @@ if __name__ == '__main__':
     cost = tf.contrib.seq2seq.sequence_loss(logits=training_logits, targets=output_data,
                                      weights=mask)
     ## Optimizer （自适应优化器）
-    optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost)
+    optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
 
     ## 梯度剪枝（防止梯度爆炸或梯度消失）
     gradients = optimizer.compute_gradients(cost)
     clip_gradients = [(tf.clip_by_value(t=grad, clip_value_max=5.0, clip_value_min=-5.0), var)
                       for grad, var in gradients if grad is not None]
-    train_op = train_op = optimizer.apply_gradients(clip_gradients)
+    train_op = optimizer.apply_gradients(clip_gradients)
 
+    # Train
+    with tf.Session() as sess:
+        sess.run(tf.global_variables_initializer())
+        sess.run(train_op, feed_dict={
+            input_data: source,
+            output_data: target,
+            input_sequence_length: from_length,
+            output_sequence_length: to_length
+        })
