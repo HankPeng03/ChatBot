@@ -1,17 +1,19 @@
 import json
 import tensorflow as tf
+import numpy as np
 from tensorflow.contrib.rnn import LSTMCell, MultiRNNCell
+
 def get_lstm_cell(hidden_size):
-    lstm_cell =  LSTMCell(num_units=hidden_size,
-                          initializer=tf.random_uniform_initializer(minval=-0.1, maxval=0.1, seed=123))
+    lstm_cell = LSTMCell(num_units=hidden_size,
+                        initializer=tf.random_uniform_initializer(minval=-0.1, maxval=0.1, seed=123))
     return lstm_cell
 
-def my_encoder(hidden_size, num_layers, embedding_matrix, input_data, input_data_length):
+def my_encoder(hidden_size, num_layers, embedding_matrix, input_data, input_sequence_length):
     encoder_embedding_input = tf.nn.embedding_lookup(params=embedding_matrix, ids=input_data)
     encoder_cells = MultiRNNCell([get_lstm_cell(hidden_size) for i in range(num_layers)])
     encoder_output, encoder_state = tf.nn.dynamic_rnn(cell=encoder_cells,
                       inputs=encoder_embedding_input,
-                      sequence_length=input_data_length,
+                      sequence_length=input_sequence_length,
                       dtype=tf.float32)
     return encoder_output, encoder_state
 
@@ -80,7 +82,7 @@ if __name__ == '__main__':
     from gensim.models import Word2Vec
     model = Word2Vec.load("Temp/word2vec.model")
 
-    import numpy as np
+
     vocab_size = len(all_dict)
     corpus_size = len(fromids)
     emb_size = 100
@@ -95,24 +97,24 @@ if __name__ == '__main__':
             k += 1
     # 统计id向量的长度，并统一长度
     from_length = [len(i) for i in fromids]
-    max_input_sequence_length = max(from_length)
-    source = [i + [word2id["_PAD"]]*(max_input_sequence_length-len(i)) for i in fromids]
+    m = max(from_length)
+    source = [i + [word2id["_PAD"]]*(m-len(i)) for i in fromids]
 
     to_length = [len(i) for i in toids]
-    max_output_sequence_length = max(to_length)
-    target = [i + [word2id['_PAD']]*(max_output_sequence_length-len(i)) for i in toids]
-    # 定义Tensor
+    m = max(to_length)
+    target = [i + [word2id['_PAD']]*(m-len(i)) for i in toids]
 
+    # 定义Tensor
     num_layers = 2
     hidden_size = 100
     learning_rate = 0.001
-    batch_size = 64
 
     ## 设置占位符
     input_data = tf.placeholder(dtype=tf.int32, shape=[corpus_size, None], name="source")  # 输入
     output_data = tf.placeholder(dtype=tf.int32, shape=[corpus_size, None], name="target")  # 输出
     input_sequence_length = tf.placeholder(dtype=tf.int32, shape=[corpus_size], name="source_sequence_length")  # 输入句子的长度
     output_sequence_length = tf.placeholder(dtype=tf.int32, shape=[corpus_size], name="target_sequence_length")  # 输出句子的长度
+    max_output_sequence_length = tf.reduce_max(output_sequence_length) # 最大输出句子长度
     emb_matrix = tf.constant(embedding_matrix, name="embedding_matrix", dtype=tf.float32)  # 词向量矩阵
 
     # Encoder
@@ -138,7 +140,7 @@ if __name__ == '__main__':
     ## 梯度剪枝（防止梯度爆炸或梯度消失）
     gradients = optimizer.compute_gradients(cost)
     clip_gradients = [(tf.clip_by_value(t=grad, clip_value_max=5.0, clip_value_min=-5.0), var)
-                      for grad, var in gradients if grad is not None]
+                      for grad, var in gradients if grad is not None] #  梯度有可能不存在
     train_op = optimizer.apply_gradients(clip_gradients)
 
     # Train
