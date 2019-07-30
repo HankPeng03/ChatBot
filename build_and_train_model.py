@@ -18,7 +18,7 @@ def my_encoder(hidden_size, num_layers, embedding_matrix, input_data, input_sequ
     return encoder_output, encoder_state
 
 def my_decoder(output_data, corpus_size, word2id, embedding_matrix, hidden_size,num_layers,
-               vocab_size, output_sequence_length, max_output_sequence_length, encoder_output):
+               vocab_size, output_sequence_length, max_output_sequence_length, encoder_state):
     # Decoder
     ## 添加_BOS
     ending = tf.strided_slice(output_data, begin=[0,0], end=[corpus_size, -1], strides=[1,1])
@@ -27,6 +27,15 @@ def my_decoder(output_data, corpus_size, word2id, embedding_matrix, hidden_size,
 
     decoder_embedding_input = tf.nn.embedding_lookup(params=embedding_matrix, ids=decoder_input_data)
     decoder_cells = MultiRNNCell([get_lstm_cell(hidden_size) for i in range(num_layers)])
+    # Attention 机制
+    attention_mechanism = tf.contrib.seq2seq.LuongAttention(num_units=hidden_size,
+                                      memory=encoder_output,
+                                      memory_sequence_length=input_sequence_length)
+    decoder_cells = tf.contrib.seq2seq.AttentionWapper(
+           cell=decoder_cells,
+           attention_mechanism=attention_mechanism,
+           attention_layer_size=hidden_size
+    )
 
     # Projection Layer
     projection_layer = tf.layers.Dense(units=vocab_size,
@@ -40,7 +49,7 @@ def my_decoder(output_data, corpus_size, word2id, embedding_matrix, hidden_size,
         # Basic Decoder
         training_decoder = tf.contrib.seq2seq.BasicDecoder(cell=decoder_cells,
                                         helper=training_helper,
-                                        initial_state=decoder_cells.zero_state(batch_size=corpus_size, dtype=tf.float32),
+                                        initial_state=encoder_state,
                                         output_layer=projection_layer)
         # Dynamic Decoder
         training_final_output, training_final_state, training_sequence_length = tf.contrib.seq2seq.dynamic_decode(decoder=training_decoder,
@@ -58,7 +67,7 @@ def my_decoder(output_data, corpus_size, word2id, embedding_matrix, hidden_size,
         # Basic Decoder
         inference_decoder = tf.contrib.seq2seq.BasicDecoder(cell=decoder_cells,
                                                             helper=inference_helper,
-                                                            initial_state=decoder_cells.zero_state(corpus_size, dtype=tf.float32),
+                                                            initial_state=encoder_state,
                                                             output_layer=projection_layer)
         # Dynamic Decoder
         inference_final_output, inference_final_state, inference_sequence_length = tf.contrib.seq2seq.dynamic_decode(decoder=inference_decoder, imput_finished=True,
@@ -123,7 +132,7 @@ if __name__ == '__main__':
     # Decoder
     training_final_output, training_final_state, inference_final_output, inference_final_state = \
         my_decoder(output_data, corpus_size, word2id, embedding_matrix, hidden_size, num_layers,
-               vocab_size, output_sequence_length, max_output_sequence_length, encoder_output)
+               vocab_size, output_sequence_length, max_output_sequence_length, encoder_state)
 
     # Encoder-Decoder Model（Seq2Seq Model）
 
@@ -143,16 +152,33 @@ if __name__ == '__main__':
                       for grad, var in gradients if grad is not None] #  梯度有可能不存在
     train_op = optimizer.apply_gradients(clip_gradients)
 
-    # Train
     with tf.Session() as sess:
+        # Train&Save
+        ckpt_path = "./checkpoint/"
+        saver = tf.train.Saver()
+        ckpt = tf.train.latest_checkpoint(ckpt_path)
+        if ckpt != None:
+            print("加载已有的模型")
+            saver.restore(sess, ckpt)
+            print("加载成功")
+        else:
+            print("重新训练模型")
         sess.run(tf.global_variables_initializer())
-        _, training_pred = sess.run(train_op, feed_dict={
-            input_data: source,
-            output_data: target,
-            input_sequence_length: from_length,
-            output_sequence_length: to_length
-        })
+        for i in range(500):
+            _, training_pred = sess.run(train_op, feed_dict={
+                input_data: source,
+                output_data: target,
+                input_sequence_length: from_length,
+                output_sequence_length: to_length
+            })
+            if i % 100 == 0:
+                saver.save(sess, ckpt_path+"training_mode.ckpt")
+                print("模型以保存".center(30, "="))
 
-        # print(' '.join([id2word[i] for i in source[0] if i != word2id["_EOS"]]))
-        # print(' '.join([id2word[i] for i in target[0] if i != word2id["_EOS"]]))
-        # print(' '.join([id2word[i] for i in training_pred[0] if i != word2id["_EOS"]]))
+
+
+
+
+
+
+
